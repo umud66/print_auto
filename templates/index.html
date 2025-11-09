@@ -244,10 +244,10 @@
 
         <div id="printSection" class="hidden">
             <button class="btn btn-primary" id="printOddBtn">打印奇数页（从小到大）</button>
+            <div id="printStatus" class="status info hidden" style="margin-top: 15px;">
+                <div id="printStatusText">正在查询打印状态...</div>
+            </div>
             <div id="continueSection" class="hidden">
-                <div class="status info">
-                    奇数页打印任务已提交，请等待打印完成后点击继续按钮
-                </div>
                 <button class="btn btn-continue" id="printEvenBtn">继续：打印偶数页（从大到小）</button>
             </div>
         </div>
@@ -257,6 +257,7 @@
         let sessionId = null;
         let currentPrinter = null;
         let hasDefaultPrinter = false;
+        let printStatusInterval = null;  // 打印状态轮询定时器
 
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -573,6 +574,8 @@
                     showStatus('奇数页打印任务已提交！', 'success');
                     printOddBtn.disabled = true;
                     printOddBtn.style.display = 'none';
+                    // 开始轮询打印状态
+                    startPrintStatusPolling('odd');
                     document.getElementById('continueSection').classList.remove('hidden');
                 } else {
                     showStatus(data.error || '打印失败', 'error');
@@ -612,14 +615,10 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    showStatus('偶数页打印任务已提交！打印完成。', 'success');
+                    showStatus('偶数页打印任务已提交！', 'success');
                     printEvenBtn.disabled = true;
-                    printEvenBtn.innerHTML = '打印完成';
-                    
-                    // 3秒后重置页面
-                    setTimeout(() => {
-                        location.reload();
-                    }, 3000);
+                    // 开始轮询打印状态
+                    startPrintStatusPolling('even');
                 } else {
                     showStatus(data.error || '打印失败', 'error');
                     printEvenBtn.disabled = false;
@@ -640,6 +639,100 @@
             statusSection.classList.remove('hidden');
             statusMessage.textContent = message;
             statusMessage.className = 'status ' + type;
+        }
+        
+        // 开始轮询打印状态
+        function startPrintStatusPolling(pageType) {
+            // 清除之前的轮询
+            if (printStatusInterval) {
+                clearInterval(printStatusInterval);
+            }
+            
+            const printStatus = document.getElementById('printStatus');
+            const printStatusText = document.getElementById('printStatusText');
+            printStatus.classList.remove('hidden');
+            
+            // 立即查询一次
+            checkPrintStatus(pageType);
+            
+            // 每3秒查询一次
+            printStatusInterval = setInterval(() => {
+                checkPrintStatus(pageType);
+            }, 3000);
+        }
+        
+        // 停止轮询打印状态
+        function stopPrintStatusPolling() {
+            if (printStatusInterval) {
+                clearInterval(printStatusInterval);
+                printStatusInterval = null;
+            }
+        }
+        
+        // 查询打印状态
+        async function checkPrintStatus(pageType) {
+            if (!sessionId) {
+                stopPrintStatusPolling();
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/print/status?session_id=${sessionId}&printer_name=${encodeURIComponent(currentPrinter || '')}`);
+                const data = await response.json();
+                
+                const printStatus = document.getElementById('printStatus');
+                const printStatusText = document.getElementById('printStatusText');
+                const continueSection = document.getElementById('continueSection');
+                
+                if (data.error) {
+                    printStatusText.textContent = `查询状态失败: ${data.error}`;
+                    printStatus.className = 'status error';
+                    return;
+                }
+                
+                if (data.success) {
+                    const jobCount = data.job_count || 0;
+                    const jobs = data.jobs || [];
+                    
+                    if (jobCount === 0) {
+                        // 没有打印任务，说明打印已完成
+                        if (pageType === 'odd') {
+                            printStatusText.textContent = '✅ 奇数页打印已完成，可以继续打印偶数页';
+                            printStatus.className = 'status success';
+                            // 显示继续按钮
+                            continueSection.classList.remove('hidden');
+                        } else {
+                            printStatusText.textContent = '✅ 偶数页打印已完成！';
+                            printStatus.className = 'status success';
+                            // 3秒后重置页面
+                            setTimeout(() => {
+                                location.reload();
+                            }, 3000);
+                        }
+                        stopPrintStatusPolling();
+                    } else {
+                        // 有打印任务
+                        const printingJobs = jobs.filter(job => job.status === 'printing');
+                        const queuedJobs = jobs.filter(job => job.status === 'queued');
+                        
+                        if (printingJobs.length > 0) {
+                            printStatusText.textContent = `🖨️ 正在打印中... (${printingJobs.length}个任务正在打印)`;
+                            printStatus.className = 'status info';
+                        } else if (queuedJobs.length > 0) {
+                            printStatusText.textContent = `⏳ 打印任务已提交，等待打印... (${queuedJobs.length}个任务在队列中)`;
+                            printStatus.className = 'status info';
+                        } else {
+                            printStatusText.textContent = `📋 打印队列中有 ${jobCount} 个任务`;
+                            printStatus.className = 'status info';
+                        }
+                    }
+                }
+            } catch (error) {
+                const printStatusText = document.getElementById('printStatusText');
+                printStatusText.textContent = `查询状态失败: ${error.message}`;
+                const printStatus = document.getElementById('printStatus');
+                printStatus.className = 'status error';
+            }
         }
     </script>
 </body>

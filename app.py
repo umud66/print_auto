@@ -465,6 +465,85 @@ def find_lp_command():
     return None
 
 
+def get_print_job_status(printer_name=None):
+    """
+    获取打印任务状态
+    
+    Args:
+        printer_name: 打印机名称，如果为None则查询默认打印机
+        
+    Returns:
+        dict: 包含打印任务状态的字典
+    """
+    lpstat_command = find_lpstat_command()
+    if not lpstat_command:
+        return {'error': '找不到lpstat命令'}
+    
+    env = os.environ.copy()
+    if '/usr/bin' not in env.get('PATH', ''):
+        env['PATH'] = '/usr/bin:/usr/local/bin:/bin:/usr/sbin:/sbin:' + env.get('PATH', '')
+    
+    try:
+        # 查询打印队列
+        if printer_name:
+            result = subprocess.run(
+                [lpstat_command, '-o', printer_name],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=5
+            )
+        else:
+            result = subprocess.run(
+                [lpstat_command, '-o'],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=5
+            )
+        
+        jobs = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 解析打印任务信息
+            # 格式: "printer-name-123  user  pages  date"
+            parts = line.split()
+            if len(parts) >= 2:
+                job_id = parts[0]  # 任务ID，如 "printer-name-123"
+                status = 'queued'  # 默认状态
+                
+                # 检查状态关键词
+                line_lower = line.lower()
+                if 'printing' in line_lower or '正在打印' in line_lower:
+                    status = 'printing'
+                elif 'completed' in line_lower or '已完成' in line_lower:
+                    status = 'completed'
+                elif 'held' in line_lower or '已暂停' in line_lower:
+                    status = 'held'
+                elif 'cancelled' in line_lower or '已取消' in line_lower:
+                    status = 'cancelled'
+                
+                jobs.append({
+                    'job_id': job_id,
+                    'status': status,
+                    'info': line
+                })
+        
+        return {
+            'success': True,
+            'jobs': jobs,
+            'job_count': len(jobs),
+            'has_jobs': len(jobs) > 0
+        }
+    except subprocess.TimeoutExpired:
+        return {'error': '查询超时'}
+    except Exception as e:
+        return {'error': f'查询失败: {str(e)}'}
+
+
 def print_pdf(pdf_path, printer_name=None):
     """
     打印PDF文件
@@ -474,7 +553,7 @@ def print_pdf(pdf_path, printer_name=None):
         printer_name: 打印机名称，如果为None则使用默认打印机
         
     Returns:
-        tuple: (是否成功, 错误信息)
+        tuple: (是否成功, 错误信息, 打印任务ID)
     """
     # 检查文件是否存在
     if not os.path.exists(pdf_path):
@@ -543,22 +622,22 @@ def print_pdf(pdf_path, printer_name=None):
         error_msg = e.stderr if e.stderr else e.stdout if e.stdout else str(e)
         # 常见错误信息处理
         if 'Unable to locate printer' in error_msg or 'printer does not exist' in error_msg:
-            return False, f'找不到打印机: {printer_name or "默认打印机"}'
+            return False, f'找不到打印机: {printer_name or "默认打印机"}', None
         elif 'permission denied' in error_msg.lower():
-            return False, '打印权限被拒绝，请检查系统权限设置'
+            return False, '打印权限被拒绝，请检查系统权限设置', None
         elif 'no default destination' in error_msg.lower():
-            return False, '没有默认打印机，请选择打印机'
+            return False, '没有默认打印机，请选择打印机', None
         elif 'No such file or directory' in error_msg:
             # macOS特殊处理：可能是动态库问题
-            return False, f'打印命令执行失败: {error_msg.strip()}. 使用的命令路径: {lp_command}'
+            return False, f'打印命令执行失败: {error_msg.strip()}. 使用的命令路径: {lp_command}', None
         else:
-            return False, f'打印失败: {error_msg.strip() or str(e)}. 使用的命令路径: {lp_command}'
+            return False, f'打印失败: {error_msg.strip() or str(e)}. 使用的命令路径: {lp_command}', None
     except subprocess.TimeoutExpired:
-        return False, '打印超时，请检查打印机状态'
+        return False, '打印超时，请检查打印机状态', None
     except FileNotFoundError as e:
-        return False, f'找不到打印命令: {str(e)}。命令路径: {lp_command}。请确保系统已安装CUPS打印服务'
+        return False, f'找不到打印命令: {str(e)}。命令路径: {lp_command}。请确保系统已安装CUPS打印服务', None
     except Exception as e:
-        return False, f'打印失败: {str(e)}。命令路径: {lp_command}'
+        return False, f'打印失败: {str(e)}。命令路径: {lp_command}', None
 
 
 @app.route('/')
@@ -707,16 +786,19 @@ def print_odd_pages():
         odd_path = session_info['odd_path']
         
         # 打印奇数页
-        success, error_msg = print_pdf(odd_path, printer_name)
+        success, error_msg, job_id = print_pdf(odd_path, printer_name)
         
         if success:
             session_info['odd_printed'] = True
+            session_info['odd_job_id'] = job_id
+            session_info['printer_name'] = printer_name
             with open(session_file, 'w', encoding='utf-8') as f:
                 json.dump(session_info, f, ensure_ascii=False)
             
             return jsonify({
                 'success': True,
-                'message': '奇数页打印任务已提交'
+                'message': '奇数页打印任务已提交',
+                'job_id': job_id
             })
         else:
             return jsonify({'error': error_msg or '打印失败'}), 500
@@ -759,16 +841,19 @@ def print_even_pages():
         even_path = session_info['even_path']
         
         # 打印偶数页
-        success, error_msg = print_pdf(even_path, printer_name)
+        success, error_msg, job_id = print_pdf(even_path, printer_name)
         
         if success:
             session_info['even_printed'] = True
+            session_info['even_job_id'] = job_id
+            session_info['printer_name'] = printer_name
             with open(session_file, 'w', encoding='utf-8') as f:
                 json.dump(session_info, f, ensure_ascii=False)
             
             return jsonify({
                 'success': True,
-                'message': '偶数页打印任务已提交'
+                'message': '偶数页打印任务已提交',
+                'job_id': job_id
             })
         else:
             return jsonify({'error': error_msg or '打印失败'}), 500
@@ -782,6 +867,32 @@ def print_even_pages():
         if app.debug or DEBUG_MODE:
             response_data['traceback'] = error_info.get('traceback', '')
         return jsonify(response_data), 500
+
+
+@app.route('/api/print/status', methods=['GET'])
+def get_print_status():
+    """
+    获取打印任务状态
+    
+    Returns:
+        json: 打印任务状态
+    """
+    printer_name = request.args.get('printer_name')
+    session_id = request.args.get('session_id')
+    
+    # 如果提供了session_id，从会话中获取打印机名称
+    if session_id:
+        session_file = os.path.join(TEMP_FOLDER, session_id, 'session.json')
+        if os.path.exists(session_file):
+            try:
+                with open(session_file, 'r', encoding='utf-8') as f:
+                    session_info = json.load(f)
+                printer_name = session_info.get('printer_name') or printer_name
+            except:
+                pass
+    
+    status = get_print_job_status(printer_name)
+    return jsonify(status)
 
 
 @app.route('/api/cleanup/<session_id>', methods=['DELETE'])
