@@ -905,6 +905,47 @@ def get_print_status():
     return jsonify(status)
 
 
+@app.route('/api/session/<session_id>', methods=['GET'])
+def get_session_info(session_id):
+    """
+    获取会话信息（用于断线重连）
+    
+    Args:
+        session_id: 会话ID
+        
+    Returns:
+        json: 会话信息
+    """
+    session_file = os.path.join(TEMP_FOLDER, session_id, 'session.json')
+    
+    if not os.path.exists(session_file):
+        return jsonify({'error': '会话不存在或已过期'}), 404
+    
+    try:
+        with open(session_file, 'r', encoding='utf-8') as f:
+            session_info = json.load(f)
+        
+        # 检查文件是否还存在
+        odd_exists = os.path.exists(session_info.get('odd_path', ''))
+        even_exists = os.path.exists(session_info.get('even_path', ''))
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'filename': session_info.get('filename'),
+            'total_pages': session_info.get('total_pages'),
+            'odd_printed': session_info.get('odd_printed', False),
+            'even_printed': session_info.get('even_printed', False),
+            'printer_name': session_info.get('printer_name'),
+            'page_range': session_info.get('page_range'),
+            'odd_exists': odd_exists,
+            'even_exists': even_exists,
+            'can_continue': session_info.get('odd_printed', False) and not session_info.get('even_printed', False) and even_exists
+        })
+    except Exception as e:
+        return jsonify({'error': f'读取会话信息失败: {str(e)}'}), 500
+
+
 @app.route('/api/cleanup/<session_id>', methods=['DELETE'])
 def cleanup_session(session_id):
     """
@@ -977,6 +1018,32 @@ def handle_exception(e):
 
 
 if __name__ == '__main__':
+    # 从命令行参数或环境变量获取端口号
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='双面打印助手Web应用')
+    parser.add_argument(
+        '--port', '-p',
+        type=int,
+        default=int(os.environ.get('PORT', 8000)),
+        help='服务器端口号（默认: 8000）'
+    )
+    parser.add_argument(
+        '--host',
+        type=str,
+        default=os.environ.get('HOST', '0.0.0.0'),
+        help='服务器主机地址（默认: 0.0.0.0）'
+    )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        default=os.environ.get('DEBUG', '').lower() == 'true',
+        help='启用调试模式'
+    )
+    
+    args = parser.parse_args()
+    
     # 开发模式下启用详细错误信息（app.debug=True会自动启用）
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    print(f"启动服务器: http://{args.host}:{args.port}")
+    app.run(debug=args.debug, host=args.host, port=args.port)
 

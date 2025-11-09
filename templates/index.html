@@ -204,6 +204,84 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* 打印状态动画 */
+        .print-status-animated {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.8;
+                transform: scale(1.02);
+            }
+        }
+
+        .status-dots {
+            display: inline-block;
+            width: 20px;
+            text-align: left;
+        }
+
+        .status-dots::after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% {
+                content: '.';
+            }
+            40% {
+                content: '..';
+            }
+            60%, 100% {
+                content: '...';
+            }
+        }
+
+        .status-icon {
+            display: inline-block;
+            animation: rotate 2s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .status-pulse {
+            animation: statusPulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes statusPulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        .print-status-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
     </style>
 </head>
 <body>
@@ -245,7 +323,10 @@
         <div id="printSection" class="hidden">
             <button class="btn btn-primary" id="printOddBtn">打印奇数页（从小到大）</button>
             <div id="printStatus" class="status info hidden" style="margin-top: 15px;">
-                <div id="printStatusText">正在查询打印状态...</div>
+                <div class="print-status-container">
+                    <span class="status-spinner" id="statusSpinner"></span>
+                    <div id="printStatusText">正在查询打印状态<span class="status-dots"></span></div>
+                </div>
             </div>
             <div id="continueSection" class="hidden">
                 <button class="btn btn-continue" id="printEvenBtn">继续：打印偶数页（从大到小）</button>
@@ -263,7 +344,123 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadPrinters();
             setupEventListeners();
+            // 尝试恢复之前的会话
+            restoreSession();
         });
+        
+        // 保存会话ID到localStorage
+        function saveSessionId(sessionId, printerName) {
+            try {
+                if (sessionId) {
+                    localStorage.setItem('lastSessionId', sessionId);
+                    if (printerName) {
+                        localStorage.setItem('lastPrinterName', printerName);
+                    }
+                }
+            } catch (e) {
+                console.warn('无法保存会话ID到localStorage:', e);
+            }
+        }
+        
+        // 从localStorage加载会话ID
+        function loadSessionId() {
+            try {
+                return {
+                    sessionId: localStorage.getItem('lastSessionId'),
+                    printerName: localStorage.getItem('lastPrinterName')
+                };
+            } catch (e) {
+                return { sessionId: null, printerName: null };
+            }
+        }
+        
+        // 清除保存的会话ID
+        function clearSessionId() {
+            try {
+                localStorage.removeItem('lastSessionId');
+                localStorage.removeItem('lastPrinterName');
+            } catch (e) {
+                console.warn('无法清除会话ID:', e);
+            }
+        }
+        
+        // 恢复之前的会话
+        async function restoreSession() {
+            const saved = loadSessionId();
+            if (!saved.sessionId) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/session/${saved.sessionId}`);
+                const data = await response.json();
+                
+                if (data.success && data.can_continue) {
+                    // 可以继续打印偶数页
+                    sessionId = data.session_id;
+                    currentPrinter = saved.printerName || data.printer_name;
+                    
+                    // 显示恢复提示
+                    showStatus('检测到未完成的打印任务，已恢复会话', 'info');
+                    
+                    // 显示打印区域
+                    document.getElementById('uploadSection').classList.add('hidden');
+                    document.getElementById('printSection').classList.remove('hidden');
+                    
+                    // 显示信息
+                    showInfo({
+                        total_pages: data.total_pages,
+                        page_range: data.page_range || '全部页面',
+                        odd_pages: Math.ceil(data.total_pages / 2),
+                        even_pages: Math.floor(data.total_pages / 2)
+                    });
+                    
+                    // 显示继续按钮
+                    document.getElementById('continueSection').classList.remove('hidden');
+                    
+                    // 隐藏打印奇数页按钮
+                    document.getElementById('printOddBtn').style.display = 'none';
+                    
+                    // 检查打印队列状态
+                    checkPrintQueueAndUpdateButton();
+                } else if (data.success && data.even_printed) {
+                    // 已经完成，清除会话
+                    clearSessionId();
+                } else if (data.success && !data.odd_printed) {
+                    // 奇数页还没打印，清除会话（重新开始）
+                    clearSessionId();
+                }
+            } catch (error) {
+                console.warn('恢复会话失败:', error);
+                // 如果会话无效，清除
+                clearSessionId();
+            }
+        }
+        
+        // 检查打印队列并更新按钮状态
+        async function checkPrintQueueAndUpdateButton() {
+            if (!sessionId) return;
+            
+            try {
+                const response = await fetch(`/api/print/status?session_id=${sessionId}&printer_name=${encodeURIComponent(currentPrinter || '')}`);
+                const data = await response.json();
+                
+                const printEvenBtn = document.getElementById('printEvenBtn');
+                if (!printEvenBtn) return;
+                
+                if (data.success && data.job_count > 0) {
+                    // 有打印任务在队列中，禁用继续按钮
+                    printEvenBtn.disabled = true;
+                    printEvenBtn.innerHTML = `⏳ 等待打印完成 (${data.job_count}个任务在队列中)`;
+                } else {
+                    // 没有打印任务，启用继续按钮
+                    printEvenBtn.disabled = false;
+                    printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+                }
+            } catch (error) {
+                console.warn('检查打印队列失败:', error);
+            }
+        }
 
         // 从localStorage加载保存的打印机
         function loadSavedPrinter() {
@@ -574,9 +771,13 @@
                     showStatus('奇数页打印任务已提交！', 'success');
                     printOddBtn.disabled = true;
                     printOddBtn.style.display = 'none';
+                    // 保存会话ID
+                    saveSessionId(sessionId, currentPrinter);
                     // 开始轮询打印状态
                     startPrintStatusPolling('odd');
                     document.getElementById('continueSection').classList.remove('hidden');
+                    // 检查打印队列并更新按钮状态
+                    checkPrintQueueAndUpdateButton();
                 } else {
                     showStatus(data.error || '打印失败', 'error');
                     printOddBtn.disabled = false;
@@ -619,6 +820,8 @@
                     printEvenBtn.disabled = true;
                     // 开始轮询打印状态
                     startPrintStatusPolling('even');
+                    // 检查打印队列状态
+                    checkPrintQueueAndUpdateButton();
                 } else {
                     showStatus(data.error || '打印失败', 'error');
                     printEvenBtn.disabled = false;
@@ -650,7 +853,11 @@
             
             const printStatus = document.getElementById('printStatus');
             const printStatusText = document.getElementById('printStatusText');
+            const statusSpinner = document.getElementById('statusSpinner');
+            
             printStatus.classList.remove('hidden');
+            printStatus.classList.add('print-status-animated');
+            statusSpinner.style.display = 'inline-block';
             
             // 立即查询一次
             checkPrintStatus(pageType);
@@ -658,6 +865,10 @@
             // 每3秒查询一次
             printStatusInterval = setInterval(() => {
                 checkPrintStatus(pageType);
+                // 如果是奇数页打印完成后的状态，也检查队列
+                if (pageType === 'odd') {
+                    checkPrintQueueAndUpdateButton();
+                }
             }, 3000);
         }
         
@@ -666,6 +877,15 @@
             if (printStatusInterval) {
                 clearInterval(printStatusInterval);
                 printStatusInterval = null;
+            }
+            
+            const printStatus = document.getElementById('printStatus');
+            const statusSpinner = document.getElementById('statusSpinner');
+            if (printStatus) {
+                printStatus.classList.remove('print-status-animated');
+            }
+            if (statusSpinner) {
+                statusSpinner.style.display = 'none';
             }
         }
         
@@ -685,7 +905,8 @@
                 const continueSection = document.getElementById('continueSection');
                 
                 if (data.error) {
-                    printStatusText.textContent = `查询状态失败: ${data.error}`;
+                    stopPrintStatusPolling();
+                    printStatusText.innerHTML = `❌ 查询状态失败: ${data.error}`;
                     printStatus.className = 'status error';
                     return;
                 }
@@ -693,43 +914,66 @@
                 if (data.success) {
                     const jobCount = data.job_count || 0;
                     const jobs = data.jobs || [];
+                    const statusSpinner = document.getElementById('statusSpinner');
                     
                     if (jobCount === 0) {
                         // 没有打印任务，说明打印已完成
+                        stopPrintStatusPolling();
                         if (pageType === 'odd') {
-                            printStatusText.textContent = '✅ 奇数页打印已完成，可以继续打印偶数页';
+                            printStatusText.innerHTML = '✅ 奇数页打印已完成，可以继续打印偶数页';
                             printStatus.className = 'status success';
-                            // 显示继续按钮
+                            // 显示继续按钮并启用
                             continueSection.classList.remove('hidden');
+                            const printEvenBtn = document.getElementById('printEvenBtn');
+                            if (printEvenBtn) {
+                                printEvenBtn.disabled = false;
+                                printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+                            }
                         } else {
-                            printStatusText.textContent = '✅ 偶数页打印已完成！';
+                            printStatusText.innerHTML = '✅ 偶数页打印已完成！';
                             printStatus.className = 'status success';
+                            // 清除会话ID
+                            clearSessionId();
                             // 3秒后重置页面
                             setTimeout(() => {
                                 location.reload();
                             }, 3000);
                         }
-                        stopPrintStatusPolling();
                     } else {
-                        // 有打印任务
+                        // 有打印任务，保持动画
+                        printStatus.classList.add('print-status-animated');
+                        if (statusSpinner) {
+                            statusSpinner.style.display = 'inline-block';
+                        }
+                        
                         const printingJobs = jobs.filter(job => job.status === 'printing');
                         const queuedJobs = jobs.filter(job => job.status === 'queued');
                         
                         if (printingJobs.length > 0) {
-                            printStatusText.textContent = `🖨️ 正在打印中... (${printingJobs.length}个任务正在打印)`;
-                            printStatus.className = 'status info';
+                            printStatusText.innerHTML = `<span class="status-icon">🖨️</span>正在打印中<span class="status-dots"></span> (${printingJobs.length}个任务正在打印)`;
+                            printStatus.className = 'status info status-pulse';
                         } else if (queuedJobs.length > 0) {
-                            printStatusText.textContent = `⏳ 打印任务已提交，等待打印... (${queuedJobs.length}个任务在队列中)`;
+                            printStatusText.innerHTML = `<span>⏳</span>打印任务已提交，等待打印<span class="status-dots"></span> (${queuedJobs.length}个任务在队列中)`;
                             printStatus.className = 'status info';
                         } else {
-                            printStatusText.textContent = `📋 打印队列中有 ${jobCount} 个任务`;
+                            printStatusText.innerHTML = `<span>📋</span>打印队列中有 ${jobCount} 个任务<span class="status-dots"></span>`;
                             printStatus.className = 'status info';
+                        }
+                        
+                        // 如果有打印任务，禁用继续按钮
+                        if (pageType === 'odd' && jobCount > 0) {
+                            const printEvenBtn = document.getElementById('printEvenBtn');
+                            if (printEvenBtn) {
+                                printEvenBtn.disabled = true;
+                                printEvenBtn.innerHTML = `⏳ 等待打印完成 (${jobCount}个任务在队列中)`;
+                            }
                         }
                     }
                 }
             } catch (error) {
+                stopPrintStatusPolling();
                 const printStatusText = document.getElementById('printStatusText');
-                printStatusText.textContent = `查询状态失败: ${error.message}`;
+                printStatusText.innerHTML = `❌ 查询状态失败: ${error.message}`;
                 const printStatus = document.getElementById('printStatus');
                 printStatus.className = 'status error';
             }
