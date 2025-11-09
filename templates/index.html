@@ -954,7 +954,49 @@
                         const queuedJobs = jobs.filter(job => job.status === 'queued');
                         
                         if (printingJobs.length > 0) {
-                            printStatusText.innerHTML = `<span class="status-icon">🖨️</span>正在打印中<span class="status-dots"></span> (${printingJobs.length}个任务正在打印)`;
+                            // 显示当前打印的页面信息
+                            let statusMsg = '';
+                            try {
+                                const printingJob = printingJobs[0]; // 取第一个正在打印的任务
+                                
+                                if (!printingJob) {
+                                    statusMsg = `<span class="status-icon">🖨️</span>正在打印中<span class="status-dots"></span> (${printingJobs.length}个任务正在打印)`;
+                                } else {
+                                    // 安全地获取页面信息
+                                    const currentPage = printingJob.current_page;
+                                    const totalPages = printingJob.total_pages;
+                                    const pageType = printingJob.page_type;
+                                    
+                                    // 确定页面类型文本
+                                    let pageTypeText = '';
+                                    if (pageType === 'odd') {
+                                        pageTypeText = ' (奇数页)';
+                                    } else if (pageType === 'even') {
+                                        pageTypeText = ' (偶数页)';
+                                    }
+                                    
+                                    // 根据可用信息构建状态消息
+                                    if (currentPage !== undefined && currentPage !== null && 
+                                        totalPages !== undefined && totalPages !== null && 
+                                        !isNaN(currentPage) && !isNaN(totalPages) &&
+                                        currentPage > 0 && totalPages > 0) {
+                                        statusMsg = `<span class="status-icon">🖨️</span>正在打印第 ${currentPage} 页，共 ${totalPages} 页${pageTypeText}<span class="status-dots"></span>`;
+                                    } else if (currentPage !== undefined && currentPage !== null && 
+                                               !isNaN(currentPage) && currentPage > 0) {
+                                        statusMsg = `<span class="status-icon">🖨️</span>正在打印第 ${currentPage} 页${pageTypeText}<span class="status-dots"></span>`;
+                                    } else {
+                                        statusMsg = `<span class="status-icon">🖨️</span>正在打印中${pageTypeText}<span class="status-dots"></span> (${printingJobs.length}个任务正在打印)`;
+                                    }
+                                }
+                            } catch (error) {
+                                // 如果解析出错，使用默认消息
+                                console.warn('解析打印状态时出错:', error);
+                                statusMsg = `<span class="status-icon">🖨️</span>正在打印中<span class="status-dots"></span> (${printingJobs.length}个任务正在打印)`;
+                            }
+                            
+                            if (printStatusText) {
+                                printStatusText.innerHTML = statusMsg;
+                            }
                             printStatus.className = 'status info status-pulse';
                         } else if (queuedJobs.length > 0) {
                             printStatusText.innerHTML = `<span>⏳</span>打印任务已提交，等待打印<span class="status-dots"></span> (${queuedJobs.length}个任务在队列中)`;
@@ -970,6 +1012,13 @@
                             if (printEvenBtn) {
                                 printEvenBtn.disabled = true;
                                 printEvenBtn.innerHTML = `⏳ 等待打印完成 (${jobCount}个任务在队列中)`;
+                            }
+                        } else if (pageType === 'odd' && jobCount === 0) {
+                            // 奇数页打印完成，启用继续按钮
+                            const printEvenBtn = document.getElementById('printEvenBtn');
+                            if (printEvenBtn) {
+                                printEvenBtn.disabled = false;
+                                printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
                             }
                         }
                     }

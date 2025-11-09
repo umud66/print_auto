@@ -465,12 +465,13 @@ def find_lp_command():
     return None
 
 
-def get_print_job_status(printer_name=None):
+def get_print_job_status(printer_name=None, session_id=None):
     """
     获取打印任务状态
     
     Args:
         printer_name: 打印机名称，如果为None则查询默认打印机
+        session_id: 会话ID，用于获取打印页数信息
         
     Returns:
         dict: 包含打印任务状态的字典
@@ -483,11 +484,22 @@ def get_print_job_status(printer_name=None):
     if '/usr/bin' not in env.get('PATH', ''):
         env['PATH'] = '/usr/bin:/usr/local/bin:/bin:/usr/sbin:/sbin:' + env.get('PATH', '')
     
+    # 获取会话信息以了解打印页数
+    session_info = None
+    if session_id:
+        session_file = os.path.join(TEMP_FOLDER, session_id, 'session.json')
+        if os.path.exists(session_file):
+            try:
+                with open(session_file, 'r', encoding='utf-8') as f:
+                    session_info = json.load(f)
+            except:
+                pass
+    
     try:
-        # 查询打印队列
+        # 查询打印队列（使用-l获取详细信息）
         if printer_name:
             result = subprocess.run(
-                [lpstat_command, '-o', printer_name],
+                [lpstat_command, '-l', '-o', printer_name],
                 capture_output=True,
                 text=True,
                 env=env,
@@ -495,7 +507,7 @@ def get_print_job_status(printer_name=None):
             )
         else:
             result = subprocess.run(
-                [lpstat_command, '-o'],
+                [lpstat_command, '-l', '-o'],
                 capture_output=True,
                 text=True,
                 env=env,
@@ -503,34 +515,196 @@ def get_print_job_status(printer_name=None):
             )
         
         jobs = []
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if not line:
+        current_job = None
+        current_job_info = []
+        
+        # 安全地处理输出
+        output_lines = []
+        try:
+            if result.stdout:
+                output_lines = result.stdout.splitlines()
+        except (AttributeError, TypeError):
+            output_lines = []
+        
+        for line in output_lines:
+            try:
+                line = line.strip() if line else ''
+                if not line:
+                    if current_job:
+                        jobs.append(current_job)
+                        current_job = None
+                        current_job_info = []
+                    continue
+            except Exception:
                 continue
             
-            # 解析打印任务信息
-            # 格式: "printer-name-123  user  pages  date"
-            parts = line.split()
-            if len(parts) >= 2:
-                job_id = parts[0]  # 任务ID，如 "printer-name-123"
-                status = 'queued'  # 默认状态
+            # 检查是否是新的任务行
+            # 格式可能是: "打印机 Brother_DCP_T425W 正在打印 Brother_DCP_T425W-14..."
+            # 或者: "Brother_DCP_T425W-14  user  pages  date"
+            try:
+                parts = line.split() if line else []
                 
-                # 检查状态关键词
-                line_lower = line.lower()
-                if 'printing' in line_lower or '正在打印' in line_lower:
-                    status = 'printing'
-                elif 'completed' in line_lower or '已完成' in line_lower:
-                    status = 'completed'
-                elif 'held' in line_lower or '已暂停' in line_lower:
-                    status = 'held'
-                elif 'cancelled' in line_lower or '已取消' in line_lower:
-                    status = 'cancelled'
+                # 检查是否包含任务ID格式（如 "Brother_DCP_T425W-14"）
+                is_new_job = False
+                job_id = None
+                status = 'queued'
                 
-                jobs.append({
-                    'job_id': job_id,
-                    'status': status,
-                    'info': line
-                })
+                # 方法1: 检查是否包含 "正在打印" 或 "printing" 关键词，且包含任务ID格式
+                if len(parts) >= 2:
+                    line_lower = line.lower() if line else ''
+                    if '正在打印' in line or 'printing' in line_lower:
+                        # 查找任务ID（格式：打印机名-数字）
+                        for part in parts:
+                            if part and '-' in part:
+                                try:
+                                    last_part = part.split('-')[-1]
+                                    if last_part.isdigit():
+                                        job_id = part
+                                        is_new_job = True
+                                        status = 'printing'
+                                        break
+                                except (IndexError, AttributeError):
+                                    continue
+                
+                # 方法2: 检查是否是标准的任务行格式（任务ID在开头）
+                if not is_new_job and len(parts) >= 2:
+                    try:
+                        potential_job_id = parts[0]
+                        if potential_job_id and '-' in potential_job_id:
+                            last_part = potential_job_id.split('-')[-1]
+                            if last_part.isdigit():
+                                job_id = potential_job_id
+                                is_new_job = True
+                                # 检查状态关键词
+                                line_lower = line.lower() if line else ''
+                                if 'printing' in line_lower or '正在打印' in line:
+                                    status = 'printing'
+                                elif 'completed' in line_lower or '已完成' in line_lower:
+                                    status = 'completed'
+                                elif 'held' in line_lower or '已暂停' in line_lower:
+                                    status = 'held'
+                                elif 'cancelled' in line_lower or '已取消' in line_lower:
+                                    status = 'cancelled'
+                    except (IndexError, AttributeError):
+                        pass
+                
+                if is_new_job and job_id:
+                    # 这是一个新的任务行
+                    if current_job:
+                        jobs.append(current_job)
+                    
+                    current_job = {
+                        'job_id': job_id,
+                        'status': status,
+                        'info': line,
+                        'details': []
+                    }
+                    current_job_info = [line]
+                elif current_job:
+                    # 这是当前任务的详细信息（可能是缩进的行，如 "Processing page 4..."）
+                    if 'details' not in current_job:
+                        current_job['details'] = []
+                    if isinstance(current_job['details'], list):
+                        current_job['details'].append(line)
+                    current_job_info.append(line)
+            except Exception as e:
+                # 如果解析单行时出错，记录但继续处理
+                import logging
+                logging.warning(f'解析打印队列行时出错: {str(e)}, 行内容: {line[:50]}')
+                # 如果当前有任务，将这一行作为详细信息添加
+                if current_job:
+                    if 'details' not in current_job:
+                        current_job['details'] = []
+                    if isinstance(current_job['details'], list):
+                        current_job['details'].append(line)
+                continue
+        
+        if current_job:
+            jobs.append(current_job)
+        
+        # 尝试从详细信息中提取页面信息
+        import re
+        for job in jobs:
+            try:
+                if job.get('status') == 'printing' and session_info:
+                    # 检查是否是奇数页还是偶数页的打印任务
+                    is_odd = False
+                    is_even = False
+                    total_pages = 0
+                    
+                    job_id = job.get('job_id', '')
+                    if job_id and session_info.get('odd_job_id') == job_id:
+                        is_odd = True
+                        total_pages = session_info.get('odd_pages', 0) or 0
+                    elif job_id and session_info.get('even_job_id') == job_id:
+                        is_even = True
+                        total_pages = session_info.get('even_pages', 0) or 0
+                    
+                    # 尝试从详细信息中解析页面信息
+                    # 查找 "Processing page X..." 格式
+                    current_page = None
+                    details = job.get('details', [])
+                    
+                    if isinstance(details, list):
+                        for detail_line in details:
+                            if not isinstance(detail_line, str):
+                                continue
+                                
+                            try:
+                                detail_lower = detail_line.lower()
+                                # 匹配 "Processing page 4..." 或 "正在处理第 4 页..."
+                                page_match = re.search(r'processing\s+page\s+(\d+)', detail_lower, re.IGNORECASE)
+                                if not page_match:
+                                    # 匹配中文格式 "正在处理第 X 页"
+                                    page_match = re.search(r'正在处理.*?第\s*(\d+)\s*页', detail_lower)
+                                if not page_match:
+                                    # 匹配 "page X of Y" 格式
+                                    page_match = re.search(r'page\s+(\d+)\s+of\s+(\d+)', detail_lower, re.IGNORECASE)
+                                    if page_match:
+                                        try:
+                                            current_page = int(page_match.group(1))
+                                            parsed_total = int(page_match.group(2))
+                                            if parsed_total > 0:
+                                                total_pages = parsed_total
+                                            break
+                                        except (ValueError, IndexError):
+                                            pass
+                                
+                                if page_match:
+                                    try:
+                                        current_page = int(page_match.group(1))
+                                        if current_page > 0:
+                                            break
+                                    except (ValueError, IndexError):
+                                        pass
+                            except Exception:
+                                # 忽略单行解析错误，继续处理下一行
+                                continue
+                    
+                    # 安全地设置页面信息
+                    if current_page is not None and current_page > 0:
+                        job['current_page'] = current_page
+                        if total_pages > 0:
+                            job['total_pages'] = total_pages
+                        if is_odd:
+                            job['page_type'] = 'odd'
+                        elif is_even:
+                            job['page_type'] = 'even'
+                    elif is_odd or is_even:
+                        # 如果无法从详细信息中获取当前页面，至少标记是奇数页还是偶数页
+                        if is_odd:
+                            job['page_type'] = 'odd'
+                            if total_pages > 0:
+                                job['total_pages'] = total_pages
+                        elif is_even:
+                            job['page_type'] = 'even'
+                            if total_pages > 0:
+                                job['total_pages'] = total_pages
+            except Exception as e:
+                # 如果解析单个任务时出错，记录但继续处理其他任务
+                import logging
+                logging.warning(f'解析打印任务信息时出错: {str(e)}')
+                continue
         
         return {
             'success': True,
@@ -901,7 +1075,7 @@ def get_print_status():
             except:
                 pass
     
-    status = get_print_job_status(printer_name)
+    status = get_print_job_status(printer_name, session_id)
     return jsonify(status)
 
 
