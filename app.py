@@ -929,15 +929,38 @@ def get_session_info(session_id):
         odd_exists = os.path.exists(session_info.get('odd_path', ''))
         even_exists = os.path.exists(session_info.get('even_path', ''))
         
+        # 计算奇偶页数量（基于选择的页面范围）
+        total_pages = session_info.get('total_pages', 0)
+        selected_count = session_info.get('selected_count', total_pages)
+        page_range = session_info.get('page_range')
+        
+        # 如果有页码范围，需要重新计算奇偶页数量
+        if page_range and total_pages > 0:
+            try:
+                selected_indices = parse_page_range(page_range, total_pages)
+                odd_count = sum(1 for idx in selected_indices if idx % 2 == 0)
+                even_count = len(selected_indices) - odd_count
+            except:
+                # 如果解析失败，使用默认计算
+                odd_count = (selected_count + 1) // 2
+                even_count = selected_count // 2
+        else:
+            # 全部页面
+            odd_count = (total_pages + 1) // 2
+            even_count = total_pages // 2
+        
         return jsonify({
             'success': True,
             'session_id': session_id,
             'filename': session_info.get('filename'),
-            'total_pages': session_info.get('total_pages'),
+            'total_pages': total_pages,
+            'selected_pages': selected_count,
+            'odd_pages': odd_count,
+            'even_pages': even_count,
             'odd_printed': session_info.get('odd_printed', False),
             'even_printed': session_info.get('even_printed', False),
             'printer_name': session_info.get('printer_name'),
-            'page_range': session_info.get('page_range'),
+            'page_range': page_range if page_range else '全部页面',
             'odd_exists': odd_exists,
             'even_exists': even_exists,
             'can_continue': session_info.get('odd_printed', False) and not session_info.get('even_printed', False) and even_exists

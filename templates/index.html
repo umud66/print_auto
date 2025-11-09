@@ -410,9 +410,10 @@
                     // 显示信息
                     showInfo({
                         total_pages: data.total_pages,
+                        selected_pages: data.selected_pages,
                         page_range: data.page_range || '全部页面',
-                        odd_pages: Math.ceil(data.total_pages / 2),
-                        even_pages: Math.floor(data.total_pages / 2)
+                        odd_pages: data.odd_pages,
+                        even_pages: data.even_pages
                     });
                     
                     // 显示继续按钮
@@ -420,6 +421,9 @@
                     
                     // 隐藏打印奇数页按钮
                     document.getElementById('printOddBtn').style.display = 'none';
+                    
+                    // 启动打印状态轮询（监控奇数页打印状态）
+                    startPrintStatusPolling('odd');
                     
                     // 检查打印队列状态
                     checkPrintQueueAndUpdateButton();
