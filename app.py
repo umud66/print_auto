@@ -26,6 +26,12 @@ UPLOAD_FOLDER = 'uploads'
 TEMP_FOLDER = 'temp'
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx'}
 
+# 如果通过app.config设置，则使用配置值（用于打包后的应用）
+if hasattr(app, 'config') and app.config.get('UPLOAD_FOLDER'):
+    UPLOAD_FOLDER = app.config.get('UPLOAD_FOLDER')
+if hasattr(app, 'config') and app.config.get('TEMP_FOLDER'):
+    TEMP_FOLDER = app.config.get('TEMP_FOLDER')
+
 # 确保文件夹存在
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(TEMP_FOLDER, exist_ok=True)
