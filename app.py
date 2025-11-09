@@ -181,7 +181,7 @@ def get_available_printers():
                     continue
                 
                 # 中文系统：匹配行首到"正在接受请求"
-                match = re.match(r'^(.*?)正在接受请求', line)
+                match = re.match(r'^(.*?)\s*(正在接受请求|自从.*开始接受请求)', line)
                 # 英文系统：匹配行首到"accepting requests"
                 if not match:
                     match = re.match(r'^(.*?) accepting requests', line)
