@@ -264,6 +264,28 @@
             setupEventListeners();
         });
 
+        // 从localStorage加载保存的打印机
+        function loadSavedPrinter() {
+            try {
+                return localStorage.getItem('selectedPrinter');
+            } catch (e) {
+                return null;
+            }
+        }
+        
+        // 保存打印机到localStorage
+        function savePrinter(printerName) {
+            try {
+                if (printerName) {
+                    localStorage.setItem('selectedPrinter', printerName);
+                } else {
+                    localStorage.removeItem('selectedPrinter');
+                }
+            } catch (e) {
+                console.warn('无法保存打印机到localStorage:', e);
+            }
+        }
+        
         // 加载打印机列表
         async function loadPrinters() {
             try {
@@ -277,12 +299,20 @@
                 // 保存是否有默认打印机
                 hasDefaultPrinter = data.has_default && data.default_printer;
                 
+                // 从localStorage加载之前保存的打印机
+                const savedPrinter = loadSavedPrinter();
+                let selectedPrinter = null;
+                
                 // 如果有默认打印机，添加默认选项
                 if (hasDefaultPrinter) {
                     const defaultOption = document.createElement('option');
                     defaultOption.value = '';
                     defaultOption.textContent = `使用默认打印机 (${data.default_printer})`;
                     select.appendChild(defaultOption);
+                    // 如果没有保存的打印机，使用默认打印机
+                    if (!savedPrinter) {
+                        selectedPrinter = '';
+                    }
                 } else if (data.printers.length === 0) {
                     // 如果没有打印机
                     const noPrinterOption = document.createElement('option');
@@ -292,14 +322,16 @@
                     select.appendChild(noPrinterOption);
                     showStatus('未找到可用打印机，请检查系统打印机设置', 'error');
                 } else {
-                    // 没有默认打印机，要求用户必须选择
-                    const selectOption = document.createElement('option');
-                    selectOption.value = '';
-                    selectOption.textContent = '请选择打印机（必选）';
-                    selectOption.disabled = true;
-                    selectOption.selected = true;
-                    select.appendChild(selectOption);
-                    showStatus('没有默认打印机，请从列表中选择一个打印机', 'info');
+                    // 没有默认打印机，自动选择第一个或保存的打印机
+                    if (savedPrinter && data.printers.includes(savedPrinter)) {
+                        // 使用保存的打印机
+                        selectedPrinter = savedPrinter;
+                    } else if (data.printers.length > 0) {
+                        // 自动选择第一个打印机
+                        selectedPrinter = data.printers[0];
+                        // 保存到localStorage
+                        savePrinter(selectedPrinter);
+                    }
                 }
                 
                 // 添加所有打印机选项
@@ -313,8 +345,18 @@
                     select.appendChild(option);
                 });
                 
-                // 如果没有默认打印机且有打印机列表，要求必须选择
-                if (!data.has_default && data.printers.length > 0) {
+                // 设置选中的打印机
+                if (selectedPrinter !== null) {
+                    select.value = selectedPrinter;
+                    currentPrinter = selectedPrinter;
+                    
+                    // 更新上传按钮状态
+                    const fileInput = document.getElementById('fileInput');
+                    const uploadBtn = document.getElementById('uploadBtn');
+                    const hasFile = fileInput.files.length > 0;
+                    uploadBtn.disabled = !hasFile;
+                } else if (!hasDefaultPrinter && data.printers.length > 0) {
+                    // 如果没有选择打印机且有打印机列表，要求必须选择
                     const uploadBtn = document.getElementById('uploadBtn');
                     uploadBtn.disabled = true;
                 }
@@ -355,6 +397,12 @@
             fileInput.addEventListener('change', handleFileSelect);
             printerSelect.addEventListener('change', () => {
                 currentPrinter = printerSelect.value;
+                // 保存选择的打印机到localStorage
+                if (currentPrinter) {
+                    savePrinter(currentPrinter);
+                } else {
+                    savePrinter(null);
+                }
                 // 检查是否选择了打印机（如果没有默认打印机，必须选择）
                 const hasFile = fileInput.files.length > 0;
                 const hasPrinter = hasDefaultPrinter || printerSelect.value !== '';
