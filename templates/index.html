@@ -312,6 +312,15 @@
                 <small style="color: #666; display: block; margin-top: 5px;">支持格式：单个页码(1)，页码范围(3-5)，多个用逗号分隔。留空表示打印全部页面</small>
             </div>
 
+            <div class="printer-select">
+                <label for="printQualitySelect">打印质量：</label>
+                <select id="printQualitySelect" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
+                    <option value="High">精细 (High)</option>
+                    <option value="Normal" selected>普通 (Normal)</option>
+                    <option value="Draft">快速 (Draft)</option>
+                </select>
+            </div>
+
             <button class="btn btn-primary" id="uploadBtn" disabled>上传并处理文件</button>
         </div>
 
@@ -343,6 +352,16 @@
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadPrinters();
+            // 加载保存的打印质量
+            const printQualitySelect = document.getElementById('printQualitySelect');
+            if (printQualitySelect) {
+                const savedQuality = loadSavedPrintQuality();
+                printQualitySelect.value = savedQuality;
+                // 监听打印质量变化并保存
+                printQualitySelect.addEventListener('change', function() {
+                    savePrintQuality(this.value);
+                });
+            }
             setupEventListeners();
             // 尝试恢复之前的会话
             restoreSession();
@@ -485,6 +504,28 @@
                 }
             } catch (e) {
                 console.warn('无法保存打印机到localStorage:', e);
+            }
+        }
+        
+        // 从localStorage加载保存的打印质量
+        function loadSavedPrintQuality() {
+            try {
+                return localStorage.getItem('printQuality') || 'Normal';
+            } catch (e) {
+                return 'Normal';
+            }
+        }
+        
+        // 保存打印质量到localStorage
+        function savePrintQuality(quality) {
+            try {
+                if (quality) {
+                    localStorage.setItem('printQuality', quality);
+                } else {
+                    localStorage.removeItem('printQuality');
+                }
+            } catch (e) {
+                console.warn('无法保存打印质量到localStorage:', e);
             }
         }
         
@@ -758,6 +799,10 @@
             printEvenBtn.innerHTML = '<span class="loading"></span>提交打印任务...';
 
             try {
+                // 获取打印质量
+                const printQualitySelect = document.getElementById('printQualitySelect');
+                const printQuality = printQualitySelect ? printQualitySelect.value : 'Normal';
+                
                 const response = await fetch('/api/print/even', {
                     method: 'POST',
                     headers: {
@@ -765,7 +810,8 @@
                     },
                     body: JSON.stringify({
                         session_id: sessionId,
-                        printer_name: currentPrinter
+                        printer_name: currentPrinter,
+                        print_quality: printQuality
                     })
                 });
 
@@ -806,6 +852,10 @@
             printOddBtn.innerHTML = '<span class="loading"></span>提交打印任务...';
 
             try {
+                // 获取打印质量
+                const printQualitySelect = document.getElementById('printQualitySelect');
+                const printQuality = printQualitySelect ? printQualitySelect.value : 'Normal';
+                
                 const response = await fetch('/api/print/odd', {
                     method: 'POST',
                     headers: {
@@ -813,7 +863,8 @@
                     },
                     body: JSON.stringify({
                         session_id: sessionId,
-                        printer_name: currentPrinter
+                        printer_name: currentPrinter,
+                        print_quality: printQuality
                     })
                 });
 

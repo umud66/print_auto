@@ -718,13 +718,14 @@ def get_print_job_status(printer_name=None, session_id=None):
         return {'error': f'查询失败: {str(e)}'}
 
 
-def print_pdf(pdf_path, printer_name=None):
+def print_pdf(pdf_path, printer_name=None, print_quality='Normal'):
     """
     打印PDF文件
     
     Args:
         pdf_path: PDF文件路径
         printer_name: 打印机名称，如果为None则使用默认打印机
+        print_quality: 打印质量，可选值：'High'（精细）、'Normal'（普通）、'Draft'（快速），默认为'Normal'
         
     Returns:
         tuple: (是否成功, 错误信息, 打印任务ID)
@@ -758,11 +759,16 @@ def print_pdf(pdf_path, printer_name=None):
     if not os.access(lp_command, os.X_OK):
         return False, f'打印命令不可执行: {lp_command}', None
     
+    # 验证打印质量参数
+    valid_qualities = ['High', 'Normal', 'Draft']
+    if print_quality not in valid_qualities:
+        print_quality = 'Normal'  # 默认使用普通质量
+    
     try:
         if printer_name:
             # 使用指定打印机
             # 在macOS上，尝试使用shell执行以确保环境正确
-            cmd = f'{lp_command} -d "{printer_name}" "{pdf_path}"'
+            cmd = f'{lp_command} -d "{printer_name}" -o cupsPrintQuality={print_quality} "{pdf_path}"'
             result = subprocess.run(
                 cmd,
                 shell=True,
@@ -780,7 +786,7 @@ def print_pdf(pdf_path, printer_name=None):
             
             # 使用默认打印机
             # 在macOS上，尝试使用shell执行以确保环境正确
-            cmd = f'{lp_command} "{pdf_path}"'
+            cmd = f'{lp_command} -o cupsPrintQuality={print_quality} "{pdf_path}"'
             result = subprocess.run(
                 cmd,
                 shell=True,
@@ -954,6 +960,7 @@ def print_odd_pages():
     data = request.json
     session_id = data.get('session_id')
     printer_name = data.get('printer_name')
+    print_quality = data.get('print_quality', 'Normal')
     
     if not session_id:
         return jsonify({'error': '缺少session_id'}), 400
@@ -970,7 +977,7 @@ def print_odd_pages():
         odd_path = session_info['odd_path']
         
         # 打印奇数页
-        success, error_msg, job_id = print_pdf(odd_path, printer_name)
+        success, error_msg, job_id = print_pdf(odd_path, printer_name, print_quality)
         
         if success:
             session_info['odd_printed'] = True
@@ -1009,6 +1016,7 @@ def print_even_pages():
     data = request.json
     session_id = data.get('session_id')
     printer_name = data.get('printer_name')
+    print_quality = data.get('print_quality', 'Normal')
     
     if not session_id:
         return jsonify({'error': '缺少session_id'}), 400
@@ -1025,7 +1033,7 @@ def print_even_pages():
         even_path = session_info['even_path']
         
         # 打印偶数页
-        success, error_msg, job_id = print_pdf(even_path, printer_name)
+        success, error_msg, job_id = print_pdf(even_path, printer_name, print_quality)
         
         if success:
             session_info['even_printed'] = True
