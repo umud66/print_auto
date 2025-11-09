@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>双面打印助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 28px;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            background: #f0f0ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area.dragover {
+            background: #e8e8ff;
+            border-color: #764ba2;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .printer-select {
+            margin-bottom: 30px;
+        }
+
+        .printer-select label {
+            display: block;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .printer-select select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        .printer-select select:hover {
+            border-color: #667eea;
+        }
+
+        .printer-select select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 15px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-continue {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .btn-continue:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4);
+        }
+
+        .btn-continue:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+
+        .info-box p {
+            margin: 5px 0;
+            color: #555;
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖨️ 双面打印助手</h1>
+        
+        <div id="uploadSection">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📄</div>
+                <div class="upload-text" id="uploadText">点击或拖拽PDF或Word文件到此处</div>
+                <div class="selected-file" id="selectedFile" style="display: none; margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 5px;">
+                    <span id="fileName" style="font-weight: 500; color: #2e7d32;"></span>
+                    <button type="button" id="clearFileBtn" style="margin-left: 10px; padding: 5px 10px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">清除</button>
+                </div>
+                <input type="file" id="fileInput" class="file-input" accept=".pdf,.doc,.docx">
+            </div>
+
+            <div class="printer-select">
+                <label for="printerSelect">选择打印机：</label>
+                <select id="printerSelect">
+                    <option value="">加载中...</option>
+                </select>
+            </div>
+
+            <div class="printer-select">
+                <label for="pageRangeInput">页码范围（可选）：</label>
+                <input type="text" id="pageRangeInput" placeholder="例如: 1,2,3-5,7,10-20 (留空表示全部页面)" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
+                <small style="color: #666; display: block; margin-top: 5px;">支持格式：单个页码(1)，页码范围(3-5)，多个用逗号分隔。留空表示打印全部页面</small>
+            </div>
+
+            <button class="btn btn-primary" id="uploadBtn" disabled>上传并处理文件</button>
+        </div>
+
+        <div id="statusSection" class="hidden">
+            <div id="statusMessage" class="status"></div>
+            <div id="infoBox" class="info-box hidden"></div>
+        </div>
+
+        <div id="printSection" class="hidden">
+            <button class="btn btn-primary" id="printOddBtn">打印奇数页（从小到大）</button>
+            <div id="continueSection" class="hidden">
+                <div class="status info">
+                    奇数页打印任务已提交，请等待打印完成后点击继续按钮
+                </div>
+                <button class="btn btn-continue" id="printEvenBtn">继续：打印偶数页（从大到小）</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let currentPrinter = null;
+        let hasDefaultPrinter = false;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadPrinters();
+            setupEventListeners();
+        });
+
+        // 加载打印机列表
+        async function loadPrinters() {
+            try {
+                const response = await fetch('/api/printers');
+                const data = await response.json();
+                const select = document.getElementById('printerSelect');
+                
+                // 清空选项
+                select.innerHTML = '';
+                
+                // 保存是否有默认打印机
+                hasDefaultPrinter = data.has_default && data.default_printer;
+                
+                // 如果有默认打印机，添加默认选项
+                if (hasDefaultPrinter) {
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = '';
+                    defaultOption.textContent = `使用默认打印机 (${data.default_printer})`;
+                    select.appendChild(defaultOption);
+                } else if (data.printers.length === 0) {
+                    // 如果没有打印机
+                    const noPrinterOption = document.createElement('option');
+                    noPrinterOption.value = '';
+                    noPrinterOption.textContent = '未找到打印机';
+                    noPrinterOption.disabled = true;
+                    select.appendChild(noPrinterOption);
+                    showStatus('未找到可用打印机，请检查系统打印机设置', 'error');
+                } else {
+                    // 没有默认打印机，要求用户必须选择
+                    const selectOption = document.createElement('option');
+                    selectOption.value = '';
+                    selectOption.textContent = '请选择打印机（必选）';
+                    selectOption.disabled = true;
+                    selectOption.selected = true;
+                    select.appendChild(selectOption);
+                    showStatus('没有默认打印机，请从列表中选择一个打印机', 'info');
+                }
+                
+                // 添加所有打印机选项
+                data.printers.forEach(printer => {
+                    const option = document.createElement('option');
+                    option.value = printer;
+                    option.textContent = printer;
+                    if (data.default_printer === printer) {
+                        option.textContent += ' (默认)';
+                    }
+                    select.appendChild(option);
+                });
+                
+                // 如果没有默认打印机且有打印机列表，要求必须选择
+                if (!data.has_default && data.printers.length > 0) {
+                    const uploadBtn = document.getElementById('uploadBtn');
+                    uploadBtn.disabled = true;
+                }
+            } catch (error) {
+                console.error('加载打印机失败:', error);
+                showStatus('加载打印机列表失败: ' + error.message, 'error');
+            }
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const printOddBtn = document.getElementById('printOddBtn');
+            const printEvenBtn = document.getElementById('printEvenBtn');
+            const printerSelect = document.getElementById('printerSelect');
+
+            // 文件选择
+            uploadArea.addEventListener('click', () => fileInput.click());
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    handleFileSelect();
+                }
+            });
+
+            fileInput.addEventListener('change', handleFileSelect);
+            printerSelect.addEventListener('change', () => {
+                currentPrinter = printerSelect.value;
+                // 检查是否选择了打印机（如果没有默认打印机，必须选择）
+                const hasFile = fileInput.files.length > 0;
+                const hasPrinter = hasDefaultPrinter || printerSelect.value !== '';
+                uploadBtn.disabled = !hasFile || !hasPrinter;
+            });
+
+            uploadBtn.addEventListener('click', handleUpload);
+            printOddBtn.addEventListener('click', handlePrintOdd);
+            printEvenBtn.addEventListener('click', handlePrintEven);
+            
+            // 清除文件按钮事件
+            const clearFileBtn = document.getElementById('clearFileBtn');
+            if (clearFileBtn) {
+                clearFileBtn.addEventListener('click', clearFileSelection);
+            }
+        }
+
+        // 处理文件选择
+        function handleFileSelect() {
+            const fileInput = document.getElementById('fileInput');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const printerSelect = document.getElementById('printerSelect');
+            const uploadText = document.getElementById('uploadText');
+            const selectedFile = document.getElementById('selectedFile');
+            const fileName = document.getElementById('fileName');
+            
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const fileNameLower = file.name.toLowerCase();
+                const allowedExtensions = ['.pdf', '.doc', '.docx'];
+                const isValid = allowedExtensions.some(ext => fileNameLower.endsWith(ext));
+                
+                if (!isValid) {
+                    showStatus('请选择PDF或Word文件（.pdf, .doc, .docx）', 'error');
+                    uploadBtn.disabled = true;
+                    // 清除文件显示
+                    selectedFile.style.display = 'none';
+                    uploadText.style.display = 'block';
+                    return;
+                }
+                
+                // 显示选择的文件名
+                fileName.textContent = file.name;
+                selectedFile.style.display = 'block';
+                uploadText.style.display = 'none';
+                
+                // 检查是否选择了打印机（如果没有默认打印机，必须选择）
+                const hasPrinter = hasDefaultPrinter || printerSelect.value !== '';
+                uploadBtn.disabled = !hasPrinter || printerSelect.options.length === 0;
+            } else {
+                uploadBtn.disabled = true;
+                // 隐藏文件显示
+                selectedFile.style.display = 'none';
+                uploadText.style.display = 'block';
+            }
+        }
+        
+        // 清除文件选择
+        function clearFileSelection() {
+            const fileInput = document.getElementById('fileInput');
+            const selectedFile = document.getElementById('selectedFile');
+            const uploadText = document.getElementById('uploadText');
+            const uploadBtn = document.getElementById('uploadBtn');
+            
+            fileInput.value = '';
+            selectedFile.style.display = 'none';
+            uploadText.style.display = 'block';
+            uploadBtn.disabled = true;
+        }
+
+        // 处理文件上传
+        async function handleUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const printerSelect = document.getElementById('printerSelect');
+            
+            if (!fileInput.files.length) {
+                showStatus('请先选择文件', 'error');
+                return;
+            }
+            
+            // 验证打印机选择（如果没有默认打印机，必须选择）
+            if (!hasDefaultPrinter && !printerSelect.value) {
+                showStatus('请选择一个打印机', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            // 添加页码范围参数
+            const pageRangeInput = document.getElementById('pageRangeInput');
+            const pageRange = pageRangeInput ? pageRangeInput.value.trim() : '';
+            if (pageRange) {
+                formData.append('page_range', pageRange);
+            }
+            
+            const uploadBtn = document.getElementById('uploadBtn');
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<span class="loading"></span>上传中...';
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    sessionId = data.session_id;
+                    currentPrinter = printerSelect.value || null;
+                    
+                    showStatus('文件上传成功！', 'success');
+                    showInfo(data);
+                    document.getElementById('uploadSection').classList.add('hidden');
+                    document.getElementById('printSection').classList.remove('hidden');
+                } else {
+                    showStatus(data.error || '上传失败', 'error');
+                }
+            } catch (error) {
+                showStatus('上传失败: ' + error.message, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '上传并处理文件';
+            }
+        }
+
+        // 显示信息
+        function showInfo(data) {
+            const infoBox = document.getElementById('infoBox');
+            let html = `<p><strong>总页数：</strong>${data.total_pages}</p>`;
+            if (data.page_range && data.page_range !== '全部页面') {
+                html += `<p><strong>选择的页码范围：</strong>${data.page_range}</p>`;
+                html += `<p><strong>选择的页数：</strong>${data.selected_pages} 页</p>`;
+            }
+            html += `<p><strong>奇数页：</strong>${data.odd_pages} 页（将从小到大打印）</p>`;
+            html += `<p><strong>偶数页：</strong>${data.even_pages} 页（将从大到小打印）</p>`;
+            infoBox.innerHTML = html;
+            infoBox.classList.remove('hidden');
+        }
+
+        // 打印奇数页
+        async function handlePrintOdd() {
+            if (!sessionId) {
+                showStatus('会话已失效，请重新上传', 'error');
+                return;
+            }
+
+            const printOddBtn = document.getElementById('printOddBtn');
+            printOddBtn.disabled = true;
+            printOddBtn.innerHTML = '<span class="loading"></span>提交打印任务...';
+
+            try {
+                const response = await fetch('/api/print/odd', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        printer_name: currentPrinter
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus('奇数页打印任务已提交！', 'success');
+                    printOddBtn.disabled = true;
+                    printOddBtn.style.display = 'none';
+                    document.getElementById('continueSection').classList.remove('hidden');
+                } else {
+                    showStatus(data.error || '打印失败', 'error');
+                    printOddBtn.disabled = false;
+                    printOddBtn.innerHTML = '打印奇数页（从小到大）';
+                }
+            } catch (error) {
+                showStatus('打印失败: ' + error.message, 'error');
+                printOddBtn.disabled = false;
+                printOddBtn.innerHTML = '打印奇数页（从小到大）';
+            }
+        }
+
+        // 打印偶数页
+        async function handlePrintEven() {
+            if (!sessionId) {
+                showStatus('会话已失效，请重新上传', 'error');
+                return;
+            }
+
+            const printEvenBtn = document.getElementById('printEvenBtn');
+            printEvenBtn.disabled = true;
+            printEvenBtn.innerHTML = '<span class="loading"></span>提交打印任务...';
+
+            try {
+                const response = await fetch('/api/print/even', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        printer_name: currentPrinter
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus('偶数页打印任务已提交！打印完成。', 'success');
+                    printEvenBtn.disabled = true;
+                    printEvenBtn.innerHTML = '打印完成';
+                    
+                    // 3秒后重置页面
+                    setTimeout(() => {
+                        location.reload();
+                    }, 3000);
+                } else {
+                    showStatus(data.error || '打印失败', 'error');
+                    printEvenBtn.disabled = false;
+                    printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+                }
+            } catch (error) {
+                showStatus('打印失败: ' + error.message, 'error');
+                printEvenBtn.disabled = false;
+                printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+            }
+        }
+
+        // 显示状态消息
+        function showStatus(message, type) {
+            const statusSection = document.getElementById('statusSection');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            statusSection.classList.remove('hidden');
+            statusMessage.textContent = message;
+            statusMessage.className = 'status ' + type;
+        }
+    </script>
+</body>
+</html>
+
