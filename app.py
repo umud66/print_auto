@@ -557,11 +557,11 @@ def print_pdf(pdf_path, printer_name=None):
     """
     # 检查文件是否存在
     if not os.path.exists(pdf_path):
-        return False, f'文件不存在: {pdf_path}'
+        return False, f'文件不存在: {pdf_path}', None
     
     # 检查文件是否可读
     if not os.access(pdf_path, os.R_OK):
-        return False, f'文件不可读: {pdf_path}'
+        return False, f'文件不可读: {pdf_path}', None
     
     # 查找lp命令
     lp_command = find_lp_command()
@@ -570,7 +570,7 @@ def print_pdf(pdf_path, printer_name=None):
         if os.path.exists('/usr/bin/lp') and os.access('/usr/bin/lp', os.X_OK):
             lp_command = '/usr/bin/lp'
         else:
-            return False, '找不到打印命令(lp)，请确保系统已安装CUPS打印服务。尝试的路径: /usr/bin/lp'
+            return False, '找不到打印命令(lp)，请确保系统已安装CUPS打印服务。尝试的路径: /usr/bin/lp', None
     
     # 在macOS上，确保PATH包含/usr/bin
     env = os.environ.copy()
@@ -579,10 +579,10 @@ def print_pdf(pdf_path, printer_name=None):
     
     # 验证命令是否真的存在
     if not os.path.exists(lp_command):
-        return False, f'打印命令不存在: {lp_command}'
+        return False, f'打印命令不存在: {lp_command}', None
     
     if not os.access(lp_command, os.X_OK):
-        return False, f'打印命令不可执行: {lp_command}'
+        return False, f'打印命令不可执行: {lp_command}', None
     
     try:
         if printer_name:
@@ -602,7 +602,7 @@ def print_pdf(pdf_path, printer_name=None):
             # 检查是否有默认打印机
             default_printer = get_default_printer()
             if not default_printer:
-                return False, '没有默认打印机，请选择打印机'
+                return False, '没有默认打印机，请选择打印机', None
             
             # 使用默认打印机
             # 在macOS上，尝试使用shell执行以确保环境正确
@@ -616,7 +616,17 @@ def print_pdf(pdf_path, printer_name=None):
                 timeout=30,
                 env=env
             )
-        return True, None
+        
+        # 尝试从输出中提取任务ID
+        job_id = None
+        if result.stdout:
+            # lp命令输出格式: "request id is printer-name-123 (1 file(s))"
+            import re
+            match = re.search(r'request id is\s+(\S+)', result.stdout, re.IGNORECASE)
+            if match:
+                job_id = match.group(1)
+        
+        return True, None, job_id
     except subprocess.CalledProcessError as e:
         # 获取详细错误信息
         error_msg = e.stderr if e.stderr else e.stdout if e.stdout else str(e)
