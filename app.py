@@ -406,23 +406,23 @@ def split_pdf_pages(pdf_path, output_dir, page_range_str=None):
         else:  # 原始文档中的偶数页（2, 4, 6, ...）
             even_pages.append(reader.pages[idx])
     
-    # 创建奇数页PDF（从小到大）
-    odd_writer = PdfWriter()
-    for page in odd_pages:
-        odd_writer.add_page(page)
-    
-    odd_path = os.path.join(output_dir, 'odd_pages.pdf')
-    with open(odd_path, 'wb') as f:
-        odd_writer.write(f)
-    
-    # 创建偶数页PDF（从大到小）
+    # 创建偶数页PDF（从小到大）
     even_writer = PdfWriter()
-    for page in reversed(even_pages):
+    for page in even_pages:
         even_writer.add_page(page)
     
     even_path = os.path.join(output_dir, 'even_pages.pdf')
     with open(even_path, 'wb') as f:
         even_writer.write(f)
+    
+    # 创建奇数页PDF（从大到小）
+    odd_writer = PdfWriter()
+    for page in reversed(odd_pages):
+        odd_writer.add_page(page)
+    
+    odd_path = os.path.join(output_dir, 'odd_pages.pdf')
+    with open(odd_path, 'wb') as f:
+        odd_writer.write(f)
     
     return odd_path, even_path, total_pages, selected_count
 
@@ -1137,7 +1137,7 @@ def get_session_info(session_id):
             'page_range': page_range if page_range else '全部页面',
             'odd_exists': odd_exists,
             'even_exists': even_exists,
-            'can_continue': session_info.get('odd_printed', False) and not session_info.get('even_printed', False) and even_exists
+            'can_continue': session_info.get('even_printed', False) and not session_info.get('odd_printed', False) and odd_exists
         })
     except Exception as e:
         return jsonify({'error': f'读取会话信息失败: {str(e)}'}), 500

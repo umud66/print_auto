@@ -321,7 +321,7 @@
         </div>
 
         <div id="printSection" class="hidden">
-            <button class="btn btn-primary" id="printOddBtn">打印奇数页（从小到大）</button>
+            <button class="btn btn-primary" id="printEvenBtn">打印偶数页（从小到大）</button>
             <div id="printStatus" class="status info hidden" style="margin-top: 15px;">
                 <div class="print-status-container">
                     <span class="status-spinner" id="statusSpinner"></span>
@@ -329,7 +329,7 @@
                 </div>
             </div>
             <div id="continueSection" class="hidden">
-                <button class="btn btn-continue" id="printEvenBtn">继续：打印偶数页（从大到小）</button>
+                <button class="btn btn-continue" id="printOddBtn">继续：打印奇数页（从大到小）</button>
             </div>
         </div>
     </div>
@@ -396,7 +396,7 @@
                 const data = await response.json();
                 
                 if (data.success && data.can_continue) {
-                    // 可以继续打印偶数页
+                    // 可以继续打印奇数页（偶数页已打印）
                     sessionId = data.session_id;
                     currentPrinter = saved.printerName || data.printer_name;
                     
@@ -419,19 +419,19 @@
                     // 显示继续按钮
                     document.getElementById('continueSection').classList.remove('hidden');
                     
-                    // 隐藏打印奇数页按钮
-                    document.getElementById('printOddBtn').style.display = 'none';
+                    // 隐藏打印偶数页按钮
+                    document.getElementById('printEvenBtn').style.display = 'none';
                     
-                    // 启动打印状态轮询（监控奇数页打印状态）
-                    startPrintStatusPolling('odd');
+                    // 启动打印状态轮询（监控偶数页打印状态）
+                    startPrintStatusPolling('even');
                     
                     // 检查打印队列状态
                     checkPrintQueueAndUpdateButton();
-                } else if (data.success && data.even_printed) {
+                } else if (data.success && data.odd_printed) {
                     // 已经完成，清除会话
                     clearSessionId();
-                } else if (data.success && !data.odd_printed) {
-                    // 奇数页还没打印，清除会话（重新开始）
+                } else if (data.success && !data.even_printed) {
+                    // 偶数页还没打印，清除会话（重新开始）
                     clearSessionId();
                 }
             } catch (error) {
@@ -449,17 +449,17 @@
                 const response = await fetch(`/api/print/status?session_id=${sessionId}&printer_name=${encodeURIComponent(currentPrinter || '')}`);
                 const data = await response.json();
                 
-                const printEvenBtn = document.getElementById('printEvenBtn');
-                if (!printEvenBtn) return;
+                const printOddBtn = document.getElementById('printOddBtn');
+                if (!printOddBtn) return;
                 
                 if (data.success && data.job_count > 0) {
                     // 有打印任务在队列中，禁用继续按钮
-                    printEvenBtn.disabled = true;
-                    printEvenBtn.innerHTML = `⏳ 等待打印完成 (${data.job_count}个任务在队列中)`;
+                    printOddBtn.disabled = true;
+                    printOddBtn.innerHTML = `⏳ 等待打印完成 (${data.job_count}个任务在队列中)`;
                 } else {
                     // 没有打印任务，启用继续按钮
-                    printEvenBtn.disabled = false;
-                    printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+                    printOddBtn.disabled = false;
+                    printOddBtn.innerHTML = '继续：打印奇数页（从大到小）';
                 }
             } catch (error) {
                 console.warn('检查打印队列失败:', error);
@@ -740,61 +740,13 @@
                 html += `<p><strong>选择的页码范围：</strong>${data.page_range}</p>`;
                 html += `<p><strong>选择的页数：</strong>${data.selected_pages} 页</p>`;
             }
-            html += `<p><strong>奇数页：</strong>${data.odd_pages} 页（将从小到大打印）</p>`;
-            html += `<p><strong>偶数页：</strong>${data.even_pages} 页（将从大到小打印）</p>`;
+            html += `<p><strong>偶数页：</strong>${data.even_pages} 页（将从小到大打印）</p>`;
+            html += `<p><strong>奇数页：</strong>${data.odd_pages} 页（将从大到小打印）</p>`;
             infoBox.innerHTML = html;
             infoBox.classList.remove('hidden');
         }
 
-        // 打印奇数页
-        async function handlePrintOdd() {
-            if (!sessionId) {
-                showStatus('会话已失效，请重新上传', 'error');
-                return;
-            }
-
-            const printOddBtn = document.getElementById('printOddBtn');
-            printOddBtn.disabled = true;
-            printOddBtn.innerHTML = '<span class="loading"></span>提交打印任务...';
-
-            try {
-                const response = await fetch('/api/print/odd', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        session_id: sessionId,
-                        printer_name: currentPrinter
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    showStatus('奇数页打印任务已提交！', 'success');
-                    printOddBtn.disabled = true;
-                    printOddBtn.style.display = 'none';
-                    // 保存会话ID
-                    saveSessionId(sessionId, currentPrinter);
-                    // 开始轮询打印状态
-                    startPrintStatusPolling('odd');
-                    document.getElementById('continueSection').classList.remove('hidden');
-                    // 检查打印队列并更新按钮状态
-                    checkPrintQueueAndUpdateButton();
-                } else {
-                    showStatus(data.error || '打印失败', 'error');
-                    printOddBtn.disabled = false;
-                    printOddBtn.innerHTML = '打印奇数页（从小到大）';
-                }
-            } catch (error) {
-                showStatus('打印失败: ' + error.message, 'error');
-                printOddBtn.disabled = false;
-                printOddBtn.innerHTML = '打印奇数页（从小到大）';
-            }
-        }
-
-        // 打印偶数页
+        // 打印偶数页（第一步）
         async function handlePrintEven() {
             if (!sessionId) {
                 showStatus('会话已失效，请重新上传', 'error');
@@ -822,19 +774,67 @@
                 if (data.success) {
                     showStatus('偶数页打印任务已提交！', 'success');
                     printEvenBtn.disabled = true;
+                    printEvenBtn.style.display = 'none';
+                    // 保存会话ID
+                    saveSessionId(sessionId, currentPrinter);
                     // 开始轮询打印状态
                     startPrintStatusPolling('even');
-                    // 检查打印队列状态
+                    document.getElementById('continueSection').classList.remove('hidden');
+                    // 检查打印队列并更新按钮状态
                     checkPrintQueueAndUpdateButton();
                 } else {
                     showStatus(data.error || '打印失败', 'error');
                     printEvenBtn.disabled = false;
-                    printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+                    printEvenBtn.innerHTML = '打印偶数页（从小到大）';
                 }
             } catch (error) {
                 showStatus('打印失败: ' + error.message, 'error');
                 printEvenBtn.disabled = false;
-                printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+                printEvenBtn.innerHTML = '打印偶数页（从大到小）';
+            }
+        }
+
+        // 打印奇数页（第二步）
+        async function handlePrintOdd() {
+            if (!sessionId) {
+                showStatus('会话已失效，请重新上传', 'error');
+                return;
+            }
+
+            const printOddBtn = document.getElementById('printOddBtn');
+            printOddBtn.disabled = true;
+            printOddBtn.innerHTML = '<span class="loading"></span>提交打印任务...';
+
+            try {
+                const response = await fetch('/api/print/odd', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        printer_name: currentPrinter
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus('奇数页打印任务已提交！', 'success');
+                    printOddBtn.disabled = true;
+                    // 开始轮询打印状态
+                    startPrintStatusPolling('odd');
+                    // 检查打印队列状态
+                    checkPrintQueueAndUpdateButton();
+                } else {
+                    showStatus(data.error || '打印失败', 'error');
+                    printOddBtn.disabled = false;
+                    printOddBtn.innerHTML = '继续：打印奇数页（从大到小）';
+                }
+            } catch (error) {
+                showStatus('打印失败: ' + error.message, 'error');
+                printOddBtn.disabled = false;
+                    printOddBtn.innerHTML = '继续：打印奇数页（从大到小）';
             }
         }
 
@@ -869,8 +869,8 @@
             // 每3秒查询一次
             printStatusInterval = setInterval(() => {
                 checkPrintStatus(pageType);
-                // 如果是奇数页打印完成后的状态，也检查队列
-                if (pageType === 'odd') {
+                // 如果是偶数页打印完成后的状态，也检查队列
+                if (pageType === 'even') {
                     checkPrintQueueAndUpdateButton();
                 }
             }, 3000);
@@ -923,18 +923,18 @@
                     if (jobCount === 0) {
                         // 没有打印任务，说明打印已完成
                         stopPrintStatusPolling();
-                        if (pageType === 'odd') {
-                            printStatusText.innerHTML = '✅ 奇数页打印已完成，可以继续打印偶数页';
+                        if (pageType === 'even') {
+                            printStatusText.innerHTML = '✅ 偶数页打印已完成，可以继续打印奇数页';
                             printStatus.className = 'status success';
                             // 显示继续按钮并启用
                             continueSection.classList.remove('hidden');
-                            const printEvenBtn = document.getElementById('printEvenBtn');
-                            if (printEvenBtn) {
-                                printEvenBtn.disabled = false;
-                                printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+                            const printOddBtn = document.getElementById('printOddBtn');
+                            if (printOddBtn) {
+                                printOddBtn.disabled = false;
+                                printOddBtn.innerHTML = '继续：打印奇数页（从大到小）';
                             }
                         } else {
-                            printStatusText.innerHTML = '✅ 偶数页打印已完成！';
+                            printStatusText.innerHTML = '✅ 奇数页打印已完成！';
                             printStatus.className = 'status success';
                             // 清除会话ID
                             clearSessionId();
@@ -1007,18 +1007,18 @@
                         }
                         
                         // 如果有打印任务，禁用继续按钮
-                        if (pageType === 'odd' && jobCount > 0) {
-                            const printEvenBtn = document.getElementById('printEvenBtn');
-                            if (printEvenBtn) {
-                                printEvenBtn.disabled = true;
-                                printEvenBtn.innerHTML = `⏳ 等待打印完成 (${jobCount}个任务在队列中)`;
+                        if (pageType === 'even' && jobCount > 0) {
+                            const printOddBtn = document.getElementById('printOddBtn');
+                            if (printOddBtn) {
+                                printOddBtn.disabled = true;
+                                printOddBtn.innerHTML = `⏳ 等待打印完成 (${jobCount}个任务在队列中)`;
                             }
-                        } else if (pageType === 'odd' && jobCount === 0) {
-                            // 奇数页打印完成，启用继续按钮
-                            const printEvenBtn = document.getElementById('printEvenBtn');
-                            if (printEvenBtn) {
-                                printEvenBtn.disabled = false;
-                                printEvenBtn.innerHTML = '继续：打印偶数页（从大到小）';
+                        } else if (pageType === 'even' && jobCount === 0) {
+                            // 偶数页打印完成，启用继续按钮
+                            const printOddBtn = document.getElementById('printOddBtn');
+                            if (printOddBtn) {
+                                printOddBtn.disabled = false;
+                                printOddBtn.innerHTML = '继续：打印奇数页（从大到小）';
                             }
                         }
                     }
