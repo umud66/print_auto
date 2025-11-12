@@ -718,7 +718,7 @@ def get_print_job_status(printer_name=None, session_id=None):
         return {'error': f'查询失败: {str(e)}'}
 
 
-def print_pdf(pdf_path, printer_name=None, print_quality='Normal'):
+def print_pdf(pdf_path, printer_name=None, print_quality='Normal', output_order='normal'):
     """
     打印PDF文件
     
@@ -726,6 +726,7 @@ def print_pdf(pdf_path, printer_name=None, print_quality='Normal'):
         pdf_path: PDF文件路径
         printer_name: 打印机名称，如果为None则使用默认打印机
         print_quality: 打印质量，可选值：'High'（精细）、'Normal'（普通）、'Draft'（快速），默认为'Normal'
+        output_order: 打印顺序，可选值：'normal'（按文件顺序打印）、'reverse'（逆序打印），默认为'normal'
         
     Returns:
         tuple: (是否成功, 错误信息, 打印任务ID)
@@ -764,11 +765,21 @@ def print_pdf(pdf_path, printer_name=None, print_quality='Normal'):
     if print_quality not in valid_qualities:
         print_quality = 'Normal'  # 默认使用普通质量
     
+    # 验证打印顺序参数（仅适用于支持的打印系统，如CUPS）
+    valid_orders = ['normal', 'reverse']
+    if output_order not in valid_orders:
+        output_order = 'normal'
+    
     try:
         if printer_name:
             # 使用指定打印机
             # 在macOS上，尝试使用shell执行以确保环境正确
-            cmd = f'{lp_command} -d "{printer_name}" -o cupsPrintQuality={print_quality} "{pdf_path}"'
+            cmd = (
+                f'{lp_command} -d "{printer_name}" '
+                f'-o cupsPrintQuality={print_quality} '
+                f'-o outputorder={output_order} '
+                f'"{pdf_path}"'
+            )
             result = subprocess.run(
                 cmd,
                 shell=True,
@@ -786,7 +797,12 @@ def print_pdf(pdf_path, printer_name=None, print_quality='Normal'):
             
             # 使用默认打印机
             # 在macOS上，尝试使用shell执行以确保环境正确
-            cmd = f'{lp_command} -o cupsPrintQuality={print_quality} "{pdf_path}"'
+            cmd = (
+                f'{lp_command} '
+                f'-o cupsPrintQuality={print_quality} '
+                f'-o outputorder={output_order} '
+                f'"{pdf_path}"'
+            )
             result = subprocess.run(
                 cmd,
                 shell=True,
